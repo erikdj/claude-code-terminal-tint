@@ -1,0 +1,10 @@
+{
+  "working": {
+    "background": "#1f5d3a",
+    "foreground": "#e8f5e9"
+  },
+  "waiting": {
+    "background": "#7a4a00",
+    "foreground": "#fff7e0"
+  }
+}

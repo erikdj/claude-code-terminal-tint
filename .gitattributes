@@ -1,0 +1,12 @@
+# Force consistent line endings so the .sh / .ps1 files work correctly on
+# whichever platform clones the repo.
+* text=auto
+
+*.sh         text eol=lf
+*.ps1        text eol=crlf
+*.md         text eol=lf
+*.json       text eol=lf
+LICENSE      text eol=lf
+.gitignore   text eol=lf
+.gitattributes text eol=lf
+CHANGELOG.md text eol=lf

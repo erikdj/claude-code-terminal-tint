@@ -1,0 +1,10 @@
+# Backups created by install.sh / install.ps1 when settings.json is malformed.
+*.bak
+
+# OS / editor noise.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
