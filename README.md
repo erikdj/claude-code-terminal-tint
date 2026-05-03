@@ -70,10 +70,14 @@ touched, so the hook can't accidentally interfere with tool output or the
 agent loop.
 
 The merge is idempotent. Running `install.sh` again (e.g. after editing
-this plugin) replaces only the entries this plugin owns, identified by the
-substring `claude-code-terminal-tint` in the command path. Anything else
-in your `settings.json` is left alone. The merged JSON is round-tripped
-through a parser before being written, so a corrupt file is never produced.
+this plugin) replaces only the entries this plugin owns, identified by a
+literal sentinel comment (`# claude-code-terminal-tint-marker`) appended
+to each hook command. The sentinel is path-independent, so the installer
+behaves the same whether you cloned the plugin into `~/.claude-code-terminal-tint`,
+`~/dotfiles/`, or anywhere else. `#` is a comment in both POSIX `sh` and
+PowerShell, so the marker has no effect at runtime. Anything else in your
+`settings.json` is left alone, and the merged JSON is round-tripped through
+a parser before being written so a corrupt file is never produced.
 
 ## Configure colors
 

@@ -38,9 +38,16 @@ fi
 
 # Write directly to the controlling terminal so Claude Code's stdout/stderr
 # pipes (which it may capture) aren't touched.
+#
+# The redirection is wrapped in a subshell so that if /dev/tty cannot be
+# opened (e.g. the hook fires from a context without a controlling tty),
+# the shell's own "cannot open" message is captured by 2>/dev/null instead
+# of leaking to the user. The bare `> /dev/tty 2>/dev/null` form does not
+# suppress the redirection failure because the shell prints it before the
+# command's stderr redirection takes effect.
 if [ -e /dev/tty ]; then
-    printf '\033]11;%s\033\\' "$BG" > /dev/tty 2>/dev/null || true
-    printf '\033]10;%s\033\\' "$FG" > /dev/tty 2>/dev/null || true
+    ( printf '\033]11;%s\033\\' "$BG" > /dev/tty ) 2>/dev/null || true
+    ( printf '\033]10;%s\033\\' "$FG" > /dev/tty ) 2>/dev/null || true
 fi
 
 exit 0
