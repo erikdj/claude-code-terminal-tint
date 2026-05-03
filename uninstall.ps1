@@ -23,15 +23,16 @@ if (Test-Path -LiteralPath $Settings) {
         }
         if ($data -is [hashtable] -and $data.ContainsKey('hooks') -and $data['hooks'] -is [hashtable]) {
             $hooks = $data['hooks']
-            $Mark  = 'claude-code-terminal-tint'
+            $Mark  = '# claude-code-terminal-tint-marker'
             $removed = 0
 
             function Test-IsOurs {
                 param($group)
                 if ($null -eq $group -or $null -eq $group.hooks) { return $false }
                 foreach ($h in $group.hooks) {
-                    if ($null -ne $h -and $h.command -and ([string]$h.command).Contains($Mark)) {
-                        return $true
+                    if ($null -ne $h -and $h.command) {
+                        $cmd = ([string]$h.command).TrimEnd()
+                        if ($cmd.EndsWith($Mark)) { return $true }
                     }
                 }
                 return $false

@@ -44,19 +44,26 @@ if (-not $data.ContainsKey('hooks') -or $data['hooks'] -isnot [hashtable]) {
 $hooks = $data['hooks']
 
 # We invoke pwsh explicitly so the hooks work regardless of execution policy.
+#
+# A literal sentinel comment is appended to each command so the installer
+# can identify its own entries on re-run regardless of where the plugin is
+# cloned. `#` is a comment in both POSIX sh and PowerShell, so the marker
+# is dropped before the actual command runs; if the command happens to be
+# parsed by cmd.exe instead, the trailing tokens are passed to pwsh and
+# end up in the script's $args (which the hook scripts ignore).
+$Mark       = '# claude-code-terminal-tint-marker'
 $StopPath   = Join-Path $Dir 'hooks\on_stop.ps1'
 $ResumePath = Join-Path $Dir 'hooks\on_resume.ps1'
-$StopCmd   = "pwsh -NoProfile -ExecutionPolicy Bypass -File `"$StopPath`""
-$ResumeCmd = "pwsh -NoProfile -ExecutionPolicy Bypass -File `"$ResumePath`""
-
-$Mark = 'claude-code-terminal-tint'
+$StopCmd   = "pwsh -NoProfile -ExecutionPolicy Bypass -File `"$StopPath`" $Mark"
+$ResumeCmd = "pwsh -NoProfile -ExecutionPolicy Bypass -File `"$ResumePath`" $Mark"
 
 function Test-IsOurs {
     param($group)
     if ($null -eq $group -or $null -eq $group.hooks) { return $false }
     foreach ($h in $group.hooks) {
-        if ($null -ne $h -and $h.command -and ([string]$h.command).Contains($Mark)) {
-            return $true
+        if ($null -ne $h -and $h.command) {
+            $cmd = ([string]$h.command).TrimEnd()
+            if ($cmd.EndsWith($Mark)) { return $true }
         }
     }
     return $false

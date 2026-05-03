@@ -31,8 +31,8 @@ PYEOF
 fi
 
 if [ -e /dev/tty ]; then
-    printf '\033]11;%s\033\\' "$BG" > /dev/tty 2>/dev/null || true
-    printf '\033]10;%s\033\\' "$FG" > /dev/tty 2>/dev/null || true
+    ( printf '\033]11;%s\033\\' "$BG" > /dev/tty ) 2>/dev/null || true
+    ( printf '\033]10;%s\033\\' "$FG" > /dev/tty ) 2>/dev/null || true
 fi
 
 exit 0

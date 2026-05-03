@@ -27,13 +27,18 @@ mkdir -p "$SETTINGS_DIR"
 # executable bit set, which is a common gotcha on Windows-mounted filesystems.
 # NOTE: paths with literal double quotes will not round-trip cleanly. Avoid
 # installing this plugin into a directory whose name contains a double quote.
-STOP_CMD="sh \"$DIR/hooks/on_stop.sh\""
-RESUME_CMD="sh \"$DIR/hooks/on_resume.sh\""
+#
+# We append a literal sentinel comment so the installer can identify its own
+# entries on re-run regardless of where the plugin is cloned. /bin/sh strips
+# the trailing comment before execution, so it has no runtime effect.
+MARKER="# claude-code-terminal-tint-marker"
+STOP_CMD="sh \"$DIR/hooks/on_stop.sh\" $MARKER"
+RESUME_CMD="sh \"$DIR/hooks/on_resume.sh\" $MARKER"
 
-python3 - "$SETTINGS" "$STOP_CMD" "$RESUME_CMD" <<'PYEOF'
+python3 - "$SETTINGS" "$STOP_CMD" "$RESUME_CMD" "$MARKER" <<'PYEOF'
 import json, os, sys
 
-path, stop_cmd, resume_cmd = sys.argv[1], sys.argv[2], sys.argv[3]
+path, stop_cmd, resume_cmd, mark = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 
 # Load existing settings, tolerating empty or malformed files.
 try:
@@ -54,16 +59,21 @@ if not isinstance(hooks, dict):
     hooks = {}
     data["hooks"] = hooks
 
-# We identify our own entries by the substring "claude-code-terminal-tint"
-# appearing in the hook command. Re-running the installer therefore replaces
-# our previous entries cleanly while leaving any other hooks alone.
-MARK = "claude-code-terminal-tint"
+# We identify our own entries by the literal sentinel comment we appended
+# to each command above. Matching on the sentinel as a trailing token (rather
+# than a bare substring) means the marker is path-independent and cannot be
+# accidentally triggered by an unrelated command that happens to mention
+# the plugin name in passing.
+MARK = mark
 
 def is_ours(group):
     if not isinstance(group, dict):
         return False
     for h in group.get("hooks", []) or []:
-        if isinstance(h, dict) and MARK in str(h.get("command", "")):
+        if not isinstance(h, dict):
+            continue
+        cmd = str(h.get("command", "")).rstrip()
+        if cmd.endswith(MARK):
             return True
     return False
 

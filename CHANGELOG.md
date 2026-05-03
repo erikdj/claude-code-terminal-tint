@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Idempotency now works regardless of where the plugin is cloned. The
+  installer previously identified its own hook entries by searching for
+  the substring `claude-code-terminal-tint` in the command path, which
+  silently failed when the plugin lived at a path that did not include
+  that string -- re-runs accumulated duplicate entries and `uninstall.sh`
+  reported "Removed 0 entries". Detection now uses a literal sentinel
+  comment (`# claude-code-terminal-tint-marker`) appended to each command.
+- Hook scripts (`on_stop.sh`, `on_resume.sh`) and `uninstall.sh` no longer
+  leak the shell's "cannot open /dev/tty" message when invoked outside of
+  an interactive terminal. The `> /dev/tty` redirect is now wrapped in a
+  subshell so the failure is captured by `2>/dev/null`.
+
+### Added
+- `test/test-install.sh` -- bash regression test that exercises install
+  idempotency, the path-independent marker, uninstall, JSON validity, and
+  the no-tty stderr-leak fix. No dependencies beyond `bash` + `python3`.
+- `test/test-install.ps1` -- PowerShell counterpart that mirrors the bash
+  test on the Windows side. Requires PowerShell 7+ (same minimum as
+  `install.ps1`).
+
 ## [0.1.0] - 2026-05-03
 
 ### Added

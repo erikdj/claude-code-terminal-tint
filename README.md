@@ -70,10 +70,14 @@ touched, so the hook can't accidentally interfere with tool output or the
 agent loop.
 
 The merge is idempotent. Running `install.sh` again (e.g. after editing
-this plugin) replaces only the entries this plugin owns, identified by the
-substring `claude-code-terminal-tint` in the command path. Anything else
-in your `settings.json` is left alone. The merged JSON is round-tripped
-through a parser before being written, so a corrupt file is never produced.
+this plugin) replaces only the entries this plugin owns, identified by a
+literal sentinel comment (`# claude-code-terminal-tint-marker`) appended
+to each hook command. The sentinel is path-independent, so the installer
+behaves the same whether you cloned the plugin into `~/.claude-code-terminal-tint`,
+`~/dotfiles/`, or anywhere else. `#` is a comment in both POSIX `sh` and
+PowerShell, so the marker has no effect at runtime. Anything else in your
+`settings.json` is left alone, and the merged JSON is round-tripped through
+a parser before being written so a corrupt file is never produced.
 
 ## Configure colors
 
@@ -168,6 +172,31 @@ Both uninstallers reset the terminal background and foreground via OSC
 110 / OSC 111 so you aren't left staring at amber after the plugin is
 gone, and they remove only this plugin's entries from `settings.json` --
 unrelated hooks stay put.
+
+## Tests
+
+Two regression tests cover the install / uninstall flow on each platform.
+Both deliberately install the plugin at a path that does **not** contain
+the string `claude-code-terminal-tint`, so the path-independent marker
+that detects this plugin's own hook entries is actually exercised. They
+also assert that pre-existing user hooks in `settings.json` are preserved
+across install and uninstall, and that `settings.json` remains valid JSON
+at every step.
+
+```sh
+# Linux / macOS / WSL -- requires bash + python3
+bash test/test-install.sh
+```
+
+```powershell
+# Windows -- requires PowerShell 7+ (same minimum as install.ps1)
+pwsh -NoProfile -File test/test-install.ps1
+```
+
+The bash test additionally asserts that the POSIX hook scripts produce
+no stderr when invoked without a controlling tty. The PowerShell hooks
+intentionally write OSC bytes to stderr (the conhost interprets them as
+recolor commands), so that assertion does not have a PowerShell analogue.
 
 ## License
 
