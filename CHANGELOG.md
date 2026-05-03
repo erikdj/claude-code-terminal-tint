@@ -23,6 +23,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `test/test-install.sh` -- bash regression test that exercises install
   idempotency, the path-independent marker, uninstall, JSON validity, and
   the no-tty stderr-leak fix. No dependencies beyond `bash` + `python3`.
+- `test/test-install.ps1` -- PowerShell counterpart that mirrors the bash
+  test on the Windows side. Requires PowerShell 7+ (same minimum as
+  `install.ps1`).
 
 ## [0.1.0] - 2026-05-03
 

@@ -173,6 +173,31 @@ Both uninstallers reset the terminal background and foreground via OSC
 gone, and they remove only this plugin's entries from `settings.json` --
 unrelated hooks stay put.
 
+## Tests
+
+Two regression tests cover the install / uninstall flow on each platform.
+Both deliberately install the plugin at a path that does **not** contain
+the string `claude-code-terminal-tint`, so the path-independent marker
+that detects this plugin's own hook entries is actually exercised. They
+also assert that pre-existing user hooks in `settings.json` are preserved
+across install and uninstall, and that `settings.json` remains valid JSON
+at every step.
+
+```sh
+# Linux / macOS / WSL -- requires bash + python3
+bash test/test-install.sh
+```
+
+```powershell
+# Windows -- requires PowerShell 7+ (same minimum as install.ps1)
+pwsh -NoProfile -File test/test-install.ps1
+```
+
+The bash test additionally asserts that the POSIX hook scripts produce
+no stderr when invoked without a controlling tty. The PowerShell hooks
+intentionally write OSC bytes to stderr (the conhost interprets them as
+recolor commands), so that assertion does not have a PowerShell analogue.
+
 ## License
 
 MIT -- see [LICENSE](LICENSE).
