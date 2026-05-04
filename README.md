@@ -75,11 +75,22 @@ prompts, idle prompts, `auth_success`, `elicitation_dialog`, etc.), and
 hooking it produced spurious tints in the middle of tool-use loops.
 
 Each hook fires a tiny script (`hooks/on_stop.*` for the green tint,
-`hooks/on_resume.*` for the reset) that writes the OSC sequences to the
-parent terminal. POSIX scripts write to `/dev/tty`; PowerShell scripts
-write to stderr via `[Console]::Error.Write`. Either way, Claude Code's
-own stdout is never touched, so the hook can't accidentally interfere
-with tool output or the agent loop.
+`hooks/on_resume.*` for the reset) that writes the OSC sequences directly
+to the controlling terminal device. POSIX scripts write to `/dev/tty`;
+PowerShell scripts open `CONOUT$` (the Windows analogue) as a `FileStream`
+and write through that. **Both deliberately bypass stdout/stderr**, because
+[the Claude Code hooks docs](https://code.claude.com/docs/en/hooks) confirm
+that Claude Code captures both streams from hook child processes -- stdout
+is parsed for JSON output and stderr is fed back to Claude as an error
+message on non-zero exit, so any escape sequences written there would
+never reach the terminal emulator. `/dev/tty` and `CONOUT$` are the
+escape hatches that go straight to the inherited conhost / pty regardless
+of how the parent process redirects standard handles.
+
+> If you're contributing a port to another shell or platform: do not
+> "simplify" the hooks to write to stdout or stderr. Write directly to
+> the controlling terminal device. The automated tests
+> (`test/test-install.{sh,ps1}`) enforce this.
 
 The merge is idempotent. Running `install.sh` again (e.g. after editing
 this plugin) replaces only the entries this plugin owns, identified by a

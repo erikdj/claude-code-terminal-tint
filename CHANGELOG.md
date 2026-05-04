@@ -6,6 +6,30 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed (Windows)
+- **The PowerShell hooks now actually recolor Windows Terminal.** Before
+  this fix, `hooks/on_stop.ps1` and `hooks/on_resume.ps1` wrote their OSC
+  sequences via `[Console]::Error.Write`, but the
+  [Claude Code hooks docs](https://code.claude.com/docs/en/hooks) confirm
+  that Claude Code captures hook stdout (parsed for JSON) and stderr
+  (surfaced as an error message on non-zero exit). Bytes written to
+  either stream are silently swallowed and never reach the terminal
+  emulator -- which is why Erik observed that the plugin worked under
+  bash/Ubuntu (where `/dev/tty` already bypasses both captured pipes)
+  but did nothing at all in Windows Terminal. Hooks now open `CONOUT$`
+  as a `FileStream` and write through that; `CONOUT$` is the Windows
+  analogue of POSIX `/dev/tty` -- a direct handle to the inherited
+  conhost/pty that remains connected to the user's terminal regardless
+  of how the parent process redirects standard handles.
+- `uninstall.ps1` was applying the same broken stderr write for its
+  on-uninstall reset; same fix applied.
+- New automated regression in `test/test-install.{sh,ps1}` asserts the
+  hooks write to `/dev/tty` (POSIX) and `CONOUT$` (Windows) and
+  explicitly do not call `[Console]::Error.Write(...)` or
+  `[Console]::Out.Write(...)`. New manual verification helper
+  `test/test-render-windows.ps1` an engineer can run from a fresh
+  Windows Terminal pane to confirm the rendering by eye.
+
 ### Changed (BREAKING)
 - The plugin now tints in only one direction: **green** when the agent is
   genuinely waiting on you, and **terminal default** (no override) the rest
