@@ -1,31 +1,38 @@
 #Requires -Version 7.0
 <#
-test/test-install.ps1 -- regression test for installer idempotency and the
-path-independent marker on the Windows / PowerShell side. Mirrors
-test/test-install.sh.
+test/test-install.ps1 -- regression test for the PowerShell side of the
+plugin. Mirrors test/test-install.sh.
 
 Run:
     pwsh -NoProfile -File test/test-install.ps1
 
-Requires PowerShell 7.0 or later. (PowerShell 5.1 cannot run install.ps1
-itself because install.ps1 uses `ConvertFrom-Json -AsHashtable`, which is
-7+-only -- so the test inherits the same minimum.)
+Requires PowerShell 7.0 or later (matching install.ps1's minimum, which
+uses ConvertFrom-Json -AsHashtable -- a 7+-only feature).
 
 Coverage (mirrors test-install.sh):
-    - Plugin path deliberately does NOT contain "claude-code-terminal-tint",
-      which exercises the marker fix that this PR is built around.
-    - Fresh install registers exactly 4 plugin hook entries.
-    - Repeated installs are idempotent (still 4 entries; no duplicates).
-    - Uninstall removes only the plugin's entries.
-    - Pre-existing user hook entries survive both install and uninstall.
-    - settings.json remains valid JSON after every step.
+  - Hook scripts emit the right escape sequences:
+      on_stop.ps1   -- OSC 11 / 10 with the green "waiting" palette
+      on_resume.ps1 -- OSC 110 / 111 (reset to default), and NO
+                       hardcoded OSC 11 color set
+  - config.json defines the green "waiting" palette and no longer
+    defines a "working" block.
+  - install.ps1 registers exactly three hook entries (Stop,
+    UserPromptSubmit, PreToolUse) and explicitly does NOT register
+    anything on Notification.
+  - Path-independent marker: idempotent re-installs and clean uninstall
+    work even when the plugin lives at a path that does not contain
+    "claude-code-terminal-tint".
+  - Migration: a settings.json pre-seeded with the v0.1.0 layout (four
+    plugin hooks including Notification) is collapsed to the new
+    three-hook layout on re-install, and the Notification key is gone.
+  - Pre-existing user hooks survive both install and uninstall.
+  - settings.json round-trips through a JSON parser at every step.
 
 Note on stderr: unlike the bash hooks (which write OSC sequences to
 /dev/tty), the PowerShell hooks intentionally write OSC bytes to the
 process's stderr stream via [Console]::Error.Write -- the conhost
 interprets them as terminal-recolor commands. There is therefore no
-"empty stderr" assertion equivalent to the bash test's tty-leak check;
-emitting bytes to stderr is the design.
+"empty stderr" assertion equivalent to the bash test's tty-leak check.
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -33,12 +40,9 @@ $ErrorActionPreference = 'Stop'
 $ScriptDir = Split-Path -Parent $PSCommandPath
 $RepoRoot  = Split-Path -Parent $ScriptDir
 
-# Tempdir under a GUID-named subfolder so the path is guaranteed not to
-# contain the plugin name. Mirrors `mktemp -d` from the bash test, but
-# uses a deterministic check for "no plugin substring" below.
-$Work     = Join-Path ([System.IO.Path]::GetTempPath()) ("cctt-test-" + [System.Guid]::NewGuid())
-$Plugin   = Join-Path $Work     'tint'
-$FakeHome = Join-Path $Work     'home'
+$Work      = Join-Path ([System.IO.Path]::GetTempPath()) ("cctt-test-" + [System.Guid]::NewGuid())
+$Plugin    = Join-Path $Work     'tint'
+$FakeHome  = Join-Path $Work     'home'
 $ClaudeDir = Join-Path $FakeHome '.claude'
 $Settings  = Join-Path $ClaudeDir 'settings.json'
 
@@ -54,6 +58,9 @@ Copy-Item -LiteralPath (Join-Path $RepoRoot 'hooks\on_resume.ps1') -Destination 
 $Mark            = '# claude-code-terminal-tint-marker'
 $InstallScript   = Join-Path $Plugin 'install.ps1'
 $UninstallScript = Join-Path $Plugin 'uninstall.ps1'
+$ConfigPath      = Join-Path $Plugin 'config.json'
+$OnStopPath      = Join-Path $Plugin 'hooks\on_stop.ps1'
+$OnResumePath    = Join-Path $Plugin 'hooks\on_resume.ps1'
 
 $script:Pass = 0
 $script:Fail = 0
@@ -97,6 +104,19 @@ function Get-OursCount {
     return $n
 }
 
+function Test-EventKey {
+    param($name)
+    if (-not (Test-Path -LiteralPath $Settings)) { return 'no' }
+    try {
+        $data = Get-Content -Raw -LiteralPath $Settings | ConvertFrom-Json -AsHashtable
+    } catch {
+        return 'no'
+    }
+    if ($null -eq $data -or -not $data.ContainsKey('hooks')) { return 'no' }
+    if ($data['hooks'] -isnot [hashtable]) { return 'no' }
+    if ($data['hooks'].ContainsKey($name)) { return 'yes' } else { return 'no' }
+}
+
 function Get-HasUserHook {
     if (-not (Test-Path -LiteralPath $Settings)) { return 'no' }
     try {
@@ -123,10 +143,6 @@ function Assert-JsonValid {
     $null = Get-Content -Raw -LiteralPath $Settings | ConvertFrom-Json
 }
 
-# Run install.ps1 / uninstall.ps1 in a child pwsh process. Setting
-# $env:HOME (and $env:USERPROFILE for safety on Windows) on this process
-# means the child inherits the env, and pwsh's automatic $HOME variable
-# is initialised from $env:HOME at session start.
 function Invoke-WithFakeHome {
     param([string]$ScriptPath)
     $prevHome    = $env:HOME
@@ -134,8 +150,6 @@ function Invoke-WithFakeHome {
     try {
         $env:HOME        = $FakeHome
         $env:USERPROFILE = $FakeHome
-        # Discard stdout/stderr -- the OSC bytes that uninstall.ps1 emits
-        # to stderr would otherwise clutter the test output.
         & pwsh -NoProfile -ExecutionPolicy Bypass -File $ScriptPath *> $null
     } finally {
         if ($null -eq $prevHome)    { Remove-Item Env:HOME        -ErrorAction SilentlyContinue }
@@ -145,8 +159,8 @@ function Invoke-WithFakeHome {
     }
 }
 
-# Sanity guard: if the plugin path *does* contain the old substring, we'd
-# be testing the wrong thing.
+# ---------- 0. Sanity guard --------------------------------------------------
+
 if ($Plugin -like '*claude-code-terminal-tint*') {
     Write-Host "FAIL -- plugin path '$Plugin' contains plugin name; cannot exercise marker fix" -ForegroundColor Red
     exit 1
@@ -154,7 +168,24 @@ if ($Plugin -like '*claude-code-terminal-tint*') {
 Write-Host "ok  -- plugin path '$Plugin' does not contain plugin name"
 $script:Pass++
 
-# Pre-seed an unrelated user hook + a top-level setting we want preserved.
+# ---------- 1. Static asset checks ------------------------------------------
+
+$cfg = Get-Content -Raw -LiteralPath $ConfigPath | ConvertFrom-Json -AsHashtable
+Assert-Eq $cfg['waiting']['background'] '#1f5d3a' "config.json: waiting.background is the green hex"
+Assert-Eq ($cfg.ContainsKey('working') ? 'yes' : 'no') 'no' "config.json: 'working' block is gone (single-color config)"
+
+$onStopSrc   = Get-Content -Raw -LiteralPath $OnStopPath
+$onResumeSrc = Get-Content -Raw -LiteralPath $OnResumePath
+
+# Hook source uses  $ESC]11;  /  $ESC]10;  /  $ESC]110  /  $ESC]111  literals
+# (the $ESC variable is bound to [char]27 at runtime). Match those tokens.
+Assert-Eq ($onStopSrc.Contains('$ESC]11;')   ? 'yes' : 'no') 'yes' "on_stop.ps1 emits OSC 11 (set background)"
+Assert-Eq ($onResumeSrc.Contains('$ESC]110') ? 'yes' : 'no') 'yes' "on_resume.ps1 emits OSC 110 (reset foreground)"
+Assert-Eq ($onResumeSrc.Contains('$ESC]111') ? 'yes' : 'no') 'yes' "on_resume.ps1 emits OSC 111 (reset background)"
+Assert-Eq ($onResumeSrc.Contains('$ESC]11;') ? 'yes' : 'no') 'no'  "on_resume.ps1 does NOT emit a hardcoded OSC 11 color set"
+
+# ---------- 2. Fresh install + idempotency ----------------------------------
+
 $preseed = @'
 {
   "hooks": {
@@ -168,28 +199,59 @@ $preseed = @'
 Set-Content -LiteralPath $Settings -Value $preseed -Encoding utf8
 
 try {
-    # 1. Fresh install
     Invoke-WithFakeHome $InstallScript
     Assert-JsonValid
-    Assert-Eq (Get-OursCount)    4     'first install registers exactly 4 plugin hook entries'
-    Assert-Eq (Get-HasUserHook)  'yes' 'pre-existing user hook survives first install'
-
-    # 2. Repeat install -- must not duplicate
-    Invoke-WithFakeHome $InstallScript
-    Assert-JsonValid
-    Assert-Eq (Get-OursCount) 4 'second install is idempotent (still 4 entries)'
+    Assert-Eq (Get-OursCount)                3     'first install registers exactly 3 plugin hook entries'
+    Assert-Eq (Test-EventKey 'Notification') 'no'  'first install does NOT register a Notification hook'
+    Assert-Eq (Test-EventKey 'Stop')             'yes' 'first install registers Stop'
+    Assert-Eq (Test-EventKey 'UserPromptSubmit') 'yes' 'first install registers UserPromptSubmit'
+    Assert-Eq (Test-EventKey 'PreToolUse')       'yes' 'first install registers PreToolUse'
+    Assert-Eq (Get-HasUserHook)              'yes' 'pre-existing user hook survives first install'
 
     Invoke-WithFakeHome $InstallScript
     Assert-JsonValid
-    Assert-Eq (Get-OursCount) 4 'third install is idempotent (still 4 entries)'
+    Assert-Eq (Get-OursCount) 3 'second install is idempotent (still 3 entries)'
 
-    # 3. Uninstall removes only our entries
+    Invoke-WithFakeHome $InstallScript
+    Assert-JsonValid
+    Assert-Eq (Get-OursCount) 3 'third install is idempotent (still 3 entries)'
+
+    # ---------- 3. Migration from v0.1.0 layout -----------------------------
+
+    $seedHash = @{
+        hooks = @{
+            Stop = @(
+                @{ hooks = @(@{ type = 'command'; command = 'echo user-existing-hook' }) }
+                @{ hooks = @(@{ type = 'command'; command = "pwsh -File /old/hooks/on_stop.ps1 $Mark" }) }
+            )
+            Notification = @(
+                @{ hooks = @(@{ type = 'command'; command = "pwsh -File /old/hooks/on_stop.ps1 $Mark" }) }
+            )
+            UserPromptSubmit = @(
+                @{ hooks = @(@{ type = 'command'; command = "pwsh -File /old/hooks/on_resume.ps1 $Mark" }) }
+            )
+            PreToolUse = @(
+                @{ matcher = '*'; hooks = @(@{ type = 'command'; command = "pwsh -File /old/hooks/on_resume.ps1 $Mark" }) }
+            )
+        }
+        model = 'claude-sonnet-4-6'
+    }
+    $seedJson = $seedHash | ConvertTo-Json -Depth 32
+    Set-Content -LiteralPath $Settings -Value $seedJson -Encoding utf8
+
+    Invoke-WithFakeHome $InstallScript
+    Assert-JsonValid
+    Assert-Eq (Get-OursCount)                3   'v0.1.0->current upgrade collapses 4 plugin entries to 3'
+    Assert-Eq (Test-EventKey 'Notification') 'no' 'v0.1.0 Notification entry is removed on upgrade'
+    Assert-Eq (Get-HasUserHook)              'yes' 'user hook on Stop survives v0.1.0->current upgrade'
+
+    # ---------- 4. Uninstall + idempotent uninstall -------------------------
+
     Invoke-WithFakeHome $UninstallScript
     Assert-JsonValid
     Assert-Eq (Get-OursCount)   0     'uninstall removes all plugin hook entries'
     Assert-Eq (Get-HasUserHook) 'yes' 'user hook survives uninstall'
 
-    # 4. Idempotent uninstall
     Invoke-WithFakeHome $UninstallScript
     Assert-JsonValid
     Assert-Eq (Get-OursCount)   0     'second uninstall is a no-op'
