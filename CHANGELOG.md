@@ -6,6 +6,30 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed (BREAKING)
+- The plugin now tints in only one direction: **green** when the agent is
+  genuinely waiting on you, and **terminal default** (no override) the rest
+  of the time. Previously it tinted in both states -- a "working" color
+  while Claude was active and a "waiting" color when paused -- which meant
+  the terminal was never returned to the user's own theme. The
+  `on_resume.*` scripts now emit OSC 110 (reset foreground) and OSC 111
+  (reset background) instead of setting a hardcoded color.
+- The `Notification` hook is no longer registered. Per the
+  [Claude Code hooks reference](https://docs.claude.com/en/docs/claude-code/hooks),
+  Notification fires multiple times per turn (for `permission_prompt`,
+  `idle_prompt`, `auth_success`, `elicitation_dialog`, etc.), and hooking
+  it caused the waiting tint to flash mid-loop while the agent was still
+  working. Only `Stop` -- the once-per-turn end-of-turn event -- now
+  triggers the green tint.
+- `config.json` now has a single configurable block (`waiting`) instead of
+  two (`working` + `waiting`). The default `waiting` color was changed
+  from the previous brown/amber (`#7a4a00` / `#fff7e0`) to the green that
+  was previously used for the "working" state (`#1f5d3a` / `#e8f5e9`).
+- Re-running `install.sh` or `install.ps1` from a previous version now
+  performs a global sweep of every hook event before re-registering, so
+  upgrading from v0.1.0 cleans out the now-unused Notification hook
+  automatically. Non-plugin hooks are still left alone.
+
 ### Fixed
 - Idempotency now works regardless of where the plugin is cloned. The
   installer previously identified its own hook entries by searching for
