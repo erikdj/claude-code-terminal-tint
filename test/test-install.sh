@@ -1,10 +1,26 @@
 #!/usr/bin/env bash
-# test/test-install.sh -- regression test for installer idempotency, the
-# path-independent marker, and the /dev/tty stderr-leak fix.
+# test/test-install.sh -- regression test for the bash side of the plugin.
 #
-# The plugin is intentionally placed at a path whose components do NOT
-# contain the substring "claude-code-terminal-tint", which is exactly the
-# case the previous substring-based marker silently mishandled.
+# Covers:
+#   - Hook scripts emit the right escape sequences:
+#       on_stop.sh    -- OSC 11 / 10 with the green "waiting" palette
+#       on_resume.sh  -- OSC 110 / 111 (reset to default), and NO
+#                        hardcoded OSC 11 color set
+#   - config.json defines the green "waiting" palette and no longer
+#     defines a "working" block.
+#   - install.sh registers exactly three hook entries (Stop,
+#     UserPromptSubmit, PreToolUse) -- and explicitly does NOT register
+#     anything on Notification, which previously fired spurious tints
+#     mid-loop.
+#   - Path-independent marker: idempotent re-installs and clean uninstall
+#     work even when the plugin lives at a path that does not contain
+#     "claude-code-terminal-tint".
+#   - Migration: a settings.json pre-seeded with the v0.1.0 layout (four
+#     plugin hooks including Notification) is collapsed to the new
+#     three-hook layout on re-install, and the Notification key is gone.
+#   - Pre-existing user hooks survive both install and uninstall.
+#   - settings.json round-trips through a JSON parser at every step.
+#   - Hook scripts and uninstall produce no stderr without a tty.
 #
 # Requires: bash, python3, sh. No other dependencies.
 
@@ -79,6 +95,14 @@ print("no")
 PYEOF
 }
 
+has_event_key() {
+    python3 - "$SETTINGS" "$1" <<'PYEOF'
+import json, sys
+data = json.load(open(sys.argv[1]))
+print("yes" if sys.argv[2] in (data.get("hooks") or {}) else "no")
+PYEOF
+}
+
 PASS=0
 FAIL=0
 assert_eq() {
@@ -92,8 +116,8 @@ assert_eq() {
     fi
 }
 
-# Sanity guard: if for some reason the plugin path *does* contain the old
-# substring, we'd be testing the wrong thing.
+# ---------- 0. Sanity guard --------------------------------------------------
+
 case "$PLUGIN" in
     *claude-code-terminal-tint*)
         echo "FAIL -- plugin path '$PLUGIN' contains 'claude-code-terminal-tint'; cannot exercise marker fix" >&2
@@ -102,6 +126,51 @@ case "$PLUGIN" in
 esac
 echo "ok  -- plugin path '$PLUGIN' does not contain plugin name"
 PASS=$((PASS + 1))
+
+# ---------- 1. Static asset checks (config.json + hook source) --------------
+
+# config.json: green palette under "waiting", no "working" block.
+GREEN_BG="$(python3 - "$PLUGIN/config.json" <<'PYEOF'
+import json, sys
+print(json.load(open(sys.argv[1])).get("waiting", {}).get("background", ""))
+PYEOF
+)"
+assert_eq "$GREEN_BG" "#1f5d3a" "config.json: waiting.background is the green hex"
+
+WORKING_PRESENT="$(python3 - "$PLUGIN/config.json" <<'PYEOF'
+import json, sys
+print("yes" if "working" in json.load(open(sys.argv[1])) else "no")
+PYEOF
+)"
+assert_eq "$WORKING_PRESENT" "no" "config.json: 'working' block is gone (single-color config)"
+
+# on_stop.sh: must emit OSC 11 (background set) so the green tint applies.
+if grep -q '\\033\]11;' "$PLUGIN/hooks/on_stop.sh"; then
+    assert_eq "yes" "yes" "on_stop.sh emits OSC 11 (set background)"
+else
+    assert_eq "no"  "yes" "on_stop.sh emits OSC 11 (set background)"
+fi
+
+# on_resume.sh: must emit OSC 110 (reset fg) and OSC 111 (reset bg), and
+# must NOT emit OSC 11 with a hardcoded color (the whole point is "go back
+# to the user's terminal default", not "set a different fixed color").
+if grep -q '\\033\]110' "$PLUGIN/hooks/on_resume.sh"; then
+    assert_eq "yes" "yes" "on_resume.sh emits OSC 110 (reset foreground)"
+else
+    assert_eq "no"  "yes" "on_resume.sh emits OSC 110 (reset foreground)"
+fi
+if grep -q '\\033\]111' "$PLUGIN/hooks/on_resume.sh"; then
+    assert_eq "yes" "yes" "on_resume.sh emits OSC 111 (reset background)"
+else
+    assert_eq "no"  "yes" "on_resume.sh emits OSC 111 (reset background)"
+fi
+if grep -q '\\033\]11;' "$PLUGIN/hooks/on_resume.sh"; then
+    assert_eq "no"  "yes" "on_resume.sh does NOT emit a hardcoded OSC 11 color set"
+else
+    assert_eq "yes" "yes" "on_resume.sh does NOT emit a hardcoded OSC 11 color set"
+fi
+
+# ---------- 2. Fresh install + idempotency on a clean settings.json ---------
 
 # Pre-seed an unrelated user hook + a top-level setting we want preserved.
 cat > "$SETTINGS" <<'EOF'
@@ -115,46 +184,79 @@ cat > "$SETTINGS" <<'EOF'
 }
 EOF
 
-# 1. Fresh install
 HOME="$FAKE_HOME" sh "$PLUGIN/install.sh" >/dev/null
 assert_json_valid
-assert_eq "$(count_ours)" "4" "first install registers exactly 4 plugin hook entries"
+assert_eq "$(count_ours)"            "3"   "first install registers exactly 3 plugin hook entries"
+assert_eq "$(has_event_key Notification)" "no"  "first install does NOT register a Notification hook"
+assert_eq "$(has_event_key Stop)"             "yes" "first install registers Stop"
+assert_eq "$(has_event_key UserPromptSubmit)" "yes" "first install registers UserPromptSubmit"
+assert_eq "$(has_event_key PreToolUse)"       "yes" "first install registers PreToolUse"
 assert_eq "$(has_user_hook)" "yes" "pre-existing user hook survives first install"
 
-# 2. Re-running the installer must not duplicate
 HOME="$FAKE_HOME" sh "$PLUGIN/install.sh" >/dev/null
 assert_json_valid
-assert_eq "$(count_ours)" "4" "second install is idempotent (still 4 entries)"
+assert_eq "$(count_ours)" "3" "second install is idempotent (still 3 entries)"
 
 HOME="$FAKE_HOME" sh "$PLUGIN/install.sh" >/dev/null
 assert_json_valid
-assert_eq "$(count_ours)" "4" "third install is idempotent (still 4 entries)"
+assert_eq "$(count_ours)" "3" "third install is idempotent (still 3 entries)"
 
-# 3. Uninstall removes only our entries
+# ---------- 3. Migration from v0.1.0 layout ---------------------------------
+
+# Reset settings.json to a v0.1.0-shape: four plugin entries (including a
+# Notification one), all bearing our marker. A correct upgrade should
+# collapse this to exactly three plugin entries with no Notification key.
+python3 - "$SETTINGS" <<'PYEOF'
+import json, sys
+seed = {
+    "hooks": {
+        "Stop": [
+            {"hooks": [{"type":"command","command":"echo user-existing-hook"}]},
+            {"hooks": [{"type":"command","command":"sh /old/plugin/hooks/on_stop.sh # claude-code-terminal-tint-marker"}]},
+        ],
+        "Notification": [
+            {"hooks": [{"type":"command","command":"sh /old/plugin/hooks/on_stop.sh # claude-code-terminal-tint-marker"}]},
+        ],
+        "UserPromptSubmit": [
+            {"hooks": [{"type":"command","command":"sh /old/plugin/hooks/on_resume.sh # claude-code-terminal-tint-marker"}]},
+        ],
+        "PreToolUse": [
+            {"hooks": [{"type":"command","command":"sh /old/plugin/hooks/on_resume.sh # claude-code-terminal-tint-marker"}], "matcher":"*"},
+        ],
+    },
+    "model": "claude-sonnet-4-6",
+}
+with open(sys.argv[1], "w") as f:
+    json.dump(seed, f, indent=2)
+PYEOF
+
+HOME="$FAKE_HOME" sh "$PLUGIN/install.sh" >/dev/null
+assert_json_valid
+assert_eq "$(count_ours)"                  "3"  "v0.1.0->current upgrade collapses 4 plugin entries to 3"
+assert_eq "$(has_event_key Notification)"  "no" "v0.1.0 Notification entry is removed on upgrade"
+assert_eq "$(has_user_hook)"               "yes" "user hook on Stop survives v0.1.0->current upgrade"
+
+# ---------- 4. Uninstall + idempotent uninstall ------------------------------
+
 HOME="$FAKE_HOME" sh "$PLUGIN/uninstall.sh" >/dev/null 2>&1
 assert_json_valid
-assert_eq "$(count_ours)" "0" "uninstall removes all plugin hook entries"
+assert_eq "$(count_ours)"   "0"   "uninstall removes all plugin hook entries"
 assert_eq "$(has_user_hook)" "yes" "user hook survives uninstall"
 
-# 4. Uninstall is also idempotent (running it again on already-clean settings)
 HOME="$FAKE_HOME" sh "$PLUGIN/uninstall.sh" >/dev/null 2>&1
 assert_json_valid
-assert_eq "$(count_ours)" "0" "second uninstall is a no-op"
+assert_eq "$(count_ours)"   "0"   "second uninstall is a no-op"
 assert_eq "$(has_user_hook)" "yes" "user hook still present after second uninstall"
 
-# 5. Stderr-leak check: the hook scripts write to /dev/tty, but when invoked
-# without a controlling tty they must NOT leak the shell's "cannot open"
-# message to stderr. Run with stdin closed to force the no-tty path.
+# ---------- 5. Stderr-leak check on all three scripts -----------------------
+
 LEAK_STOP="$(sh "$PLUGIN/hooks/on_stop.sh" </dev/null 2>&1 >/dev/null || true)"
 assert_eq "${LEAK_STOP}" "" "on_stop.sh produces no stderr without a tty"
 
 LEAK_RESUME="$(sh "$PLUGIN/hooks/on_resume.sh" </dev/null 2>&1 >/dev/null || true)"
 assert_eq "${LEAK_RESUME}" "" "on_resume.sh produces no stderr without a tty"
 
-LEAK_UNINSTALL="$(HOME="$FAKE_HOME" sh "$PLUGIN/uninstall.sh" </dev/null 2>/dev/null 1>/dev/null && \
-                  HOME="$FAKE_HOME" sh "$PLUGIN/uninstall.sh" </dev/null 2>&1 >/dev/null || true)"
-# The uninstall script also writes the OSC reset to /dev/tty -- same fix.
-# We compare against the empty string to assert no shell error leaked through.
+LEAK_UNINSTALL="$(HOME="$FAKE_HOME" sh "$PLUGIN/uninstall.sh" </dev/null 2>&1 >/dev/null || true)"
 assert_eq "${LEAK_UNINSTALL}" "" "uninstall.sh produces no stderr without a tty"
 
 echo
