@@ -174,8 +174,9 @@ $cfg = Get-Content -Raw -LiteralPath $ConfigPath | ConvertFrom-Json -AsHashtable
 Assert-Eq $cfg['waiting']['background'] '#1f5d3a' "config.json: waiting.background is the green hex"
 Assert-Eq ($cfg.ContainsKey('working') ? 'yes' : 'no') 'no' "config.json: 'working' block is gone (single-color config)"
 
-$onStopSrc   = Get-Content -Raw -LiteralPath $OnStopPath
-$onResumeSrc = Get-Content -Raw -LiteralPath $OnResumePath
+$onStopSrc      = Get-Content -Raw -LiteralPath $OnStopPath
+$onResumeSrc    = Get-Content -Raw -LiteralPath $OnResumePath
+$uninstallSrc   = Get-Content -Raw -LiteralPath $UninstallScript
 
 # Hook source uses  $ESC]11;  /  $ESC]10;  /  $ESC]110  /  $ESC]111  literals
 # (the $ESC variable is bound to [char]27 at runtime). Match those tokens.
@@ -183,6 +184,29 @@ Assert-Eq ($onStopSrc.Contains('$ESC]11;')   ? 'yes' : 'no') 'yes' "on_stop.ps1 
 Assert-Eq ($onResumeSrc.Contains('$ESC]110') ? 'yes' : 'no') 'yes' "on_resume.ps1 emits OSC 110 (reset foreground)"
 Assert-Eq ($onResumeSrc.Contains('$ESC]111') ? 'yes' : 'no') 'yes' "on_resume.ps1 emits OSC 111 (reset background)"
 Assert-Eq ($onResumeSrc.Contains('$ESC]11;') ? 'yes' : 'no') 'no'  "on_resume.ps1 does NOT emit a hardcoded OSC 11 color set"
+
+# CONOUT$ regression guard. Claude Code captures both stdout and stderr
+# from hook child processes (per the hooks docs), so writing OSC bytes
+# to [Console]::Error.Write or [Console]::Out.Write swallows them
+# silently without ever reaching Windows Terminal. The hooks must write
+# directly to the conhost device (`CONOUT$`), the Windows analogue of
+# POSIX /dev/tty. This test catches a regression where someone
+# "simplifies" the code back to writing stderr.
+#
+# We match against actual call expressions (with the trailing `(`) so
+# the rules-of-engagement comments at the top of each script (which
+# legitimately mention [Console]::Error.Write to explain why we don't
+# use it) don't trip the regression guard.
+$consoleErrorCall = '\[Console\]::Error\.Write\('
+$consoleOutCall   = '\[Console\]::Out\.Write\('
+
+Assert-Eq ($onStopSrc.Contains('CONOUT$')                              ? 'yes' : 'no') 'yes' "on_stop.ps1 writes OSC sequences to CONOUT`$ (not stderr)"
+Assert-Eq ($onResumeSrc.Contains('CONOUT$')                            ? 'yes' : 'no') 'yes' "on_resume.ps1 writes OSC sequences to CONOUT`$ (not stderr)"
+Assert-Eq ([regex]::IsMatch($onStopSrc,    $consoleErrorCall) ? 'yes' : 'no') 'no'  "on_stop.ps1 makes no [Console]::Error.Write(...) call"
+Assert-Eq ([regex]::IsMatch($onResumeSrc,  $consoleErrorCall) ? 'yes' : 'no') 'no'  "on_resume.ps1 makes no [Console]::Error.Write(...) call"
+Assert-Eq ([regex]::IsMatch($onStopSrc,    $consoleOutCall)   ? 'yes' : 'no') 'no'  "on_stop.ps1 makes no [Console]::Out.Write(...) call"
+Assert-Eq ([regex]::IsMatch($onResumeSrc,  $consoleOutCall)   ? 'yes' : 'no') 'no'  "on_resume.ps1 makes no [Console]::Out.Write(...) call"
+Assert-Eq ($uninstallSrc.Contains('CONOUT$')                           ? 'yes' : 'no') 'yes' "uninstall.ps1 writes the OSC reset to CONOUT`$"
 
 # ---------- 2. Fresh install + idempotency ----------------------------------
 

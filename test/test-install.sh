@@ -170,6 +170,30 @@ else
     assert_eq "yes" "yes" "on_resume.sh does NOT emit a hardcoded OSC 11 color set"
 fi
 
+# /dev/tty regression guard. Claude Code captures both stdout and stderr
+# from hook child processes (per the hooks docs), so writing OSC bytes
+# to >&1 or >&2 swallows them silently without ever reaching the
+# terminal emulator. The hooks must write directly to /dev/tty -- the
+# controlling terminal device, which remains connected to the user's
+# terminal regardless of pipe redirection by the parent process. This
+# test catches a regression where someone "simplifies" the code back
+# to writing stdout/stderr.
+if grep -q '> /dev/tty' "$PLUGIN/hooks/on_stop.sh"; then
+    assert_eq "yes" "yes" "on_stop.sh writes OSC sequences to /dev/tty (not stderr)"
+else
+    assert_eq "no"  "yes" "on_stop.sh writes OSC sequences to /dev/tty (not stderr)"
+fi
+if grep -q '> /dev/tty' "$PLUGIN/hooks/on_resume.sh"; then
+    assert_eq "yes" "yes" "on_resume.sh writes OSC sequences to /dev/tty (not stderr)"
+else
+    assert_eq "no"  "yes" "on_resume.sh writes OSC sequences to /dev/tty (not stderr)"
+fi
+if grep -q '> /dev/tty' "$PLUGIN/uninstall.sh"; then
+    assert_eq "yes" "yes" "uninstall.sh writes the OSC reset to /dev/tty"
+else
+    assert_eq "no"  "yes" "uninstall.sh writes the OSC reset to /dev/tty"
+fi
+
 # ---------- 2. Fresh install + idempotency on a clean settings.json ---------
 
 # Pre-seed an unrelated user hook + a top-level setting we want preserved.
