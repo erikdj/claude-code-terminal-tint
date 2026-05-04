@@ -62,9 +62,30 @@ if (Test-Path -LiteralPath $Settings) {
     }
 }
 
-# Reset terminal colors to defaults.
+# Reset terminal colors to defaults via the conhost device. We write to
+# CONOUT$ rather than [Console]::Error because Claude Code-spawned hook
+# child processes have their stderr captured -- and although uninstall is
+# typically run by hand, we use the same approach the hooks do for
+# consistency, and so a script-driven uninstall (e.g. from CI or
+# automation) still resets the running terminal.
 $ESC = [char]27
-[Console]::Error.Write("$ESC]111$ESC\")
-[Console]::Error.Write("$ESC]110$ESC\")
+try {
+    $stream = [System.IO.File]::Open(
+        'CONOUT$',
+        [System.IO.FileMode]::Open,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::ReadWrite
+    )
+    try {
+        $writer = [System.IO.StreamWriter]::new($stream, [System.Text.Encoding]::ASCII)
+        $writer.Write("$ESC]111$ESC\")
+        $writer.Write("$ESC]110$ESC\")
+        $writer.Flush()
+    } finally {
+        $stream.Dispose()
+    }
+} catch {
+    # No conhost available -- silently skip.
+}
 
 Write-Host "Uninstalled. Restart Claude Code for the settings change to take effect."
