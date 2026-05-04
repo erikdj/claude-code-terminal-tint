@@ -77,23 +77,39 @@ def is_ours(group):
             return True
     return False
 
-def upsert(event, cmd, matcher=None):
+# Global sweep: remove this plugin's entries from EVERY event before
+# re-registering. This is what makes upgrades clean -- e.g. v0.1.0 wired
+# a hook on the Notification event that subsequent versions no longer
+# use; without this sweep the stale entry would survive a re-install.
+for event in list(hooks.keys()):
+    arr = hooks[event]
+    if not isinstance(arr, list):
+        continue
+    arr[:] = [g for g in arr if not is_ours(g)]
+    if not arr:
+        del hooks[event]
+
+def add(event, cmd, matcher=None):
     arr = hooks.setdefault(event, [])
     if not isinstance(arr, list):
         arr = []
         hooks[event] = arr
-    arr[:] = [g for g in arr if not is_ours(g)]
     entry = {"hooks": [{"type": "command", "command": cmd}]}
     if matcher:
         entry["matcher"] = matcher
     arr.append(entry)
 
-# Waiting tint: Claude finished or is asking for input.
-upsert("Stop", stop_cmd)
-upsert("Notification", stop_cmd)
-# Working tint: user submitted a prompt or Claude started a tool call.
-upsert("UserPromptSubmit", resume_cmd)
-upsert("PreToolUse", resume_cmd, matcher="*")
+# Green tint when Claude is genuinely waiting on the human (end of turn).
+# Per the Claude Code hooks docs, Stop is the once-per-turn event that
+# fires after the agentic loop completes; we deliberately do NOT also
+# hook Notification, which fires multiple times per turn (permission
+# prompts, idle prompts, auth_success, elicitation_*) and produced
+# spurious tints in the middle of tool-use loops.
+add("Stop", stop_cmd)
+# Reset to terminal default whenever Claude is back at work, so the user
+# sees their normal terminal theme during long autonomous loops.
+add("UserPromptSubmit", resume_cmd)
+add("PreToolUse", resume_cmd, matcher="*")
 
 # Validate by round-tripping through json before writing.
 out = json.dumps(data, indent=2)

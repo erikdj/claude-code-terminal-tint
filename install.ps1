@@ -69,27 +69,47 @@ function Test-IsOurs {
     return $false
 }
 
-function Invoke-Upsert {
+# Global sweep: remove this plugin's entries from EVERY event before
+# re-registering. This is what makes upgrades clean -- e.g. v0.1.0 wired
+# a hook on the Notification event that subsequent versions no longer
+# use; without this sweep the stale entry would survive a re-install.
+foreach ($event in @($hooks.Keys)) {
+    $arr = $hooks[$event]
+    if ($arr -isnot [System.Collections.IList]) { continue }
+    $kept = @()
+    foreach ($g in $arr) {
+        if (-not (Test-IsOurs $g)) { $kept += ,$g }
+    }
+    if ($kept.Count -eq 0) {
+        $hooks.Remove($event)
+    } else {
+        $hooks[$event] = @($kept)
+    }
+}
+
+function Add-Hook {
     param($event, $cmd, $matcher)
     if (-not $hooks.ContainsKey($event) -or $hooks[$event] -isnot [System.Collections.IList]) {
         $hooks[$event] = @()
     }
-    $kept = @()
-    foreach ($g in $hooks[$event]) {
-        if (-not (Test-IsOurs $g)) { $kept += ,$g }
-    }
     $entry = @{ hooks = @(@{ type = 'command'; command = $cmd }) }
     if ($matcher) { $entry['matcher'] = $matcher }
-    $kept += ,$entry
     # Force array shape so ConvertTo-Json never collapses a single-element
     # list into a bare object.
-    $hooks[$event] = @($kept)
+    $hooks[$event] = @($hooks[$event]) + ,$entry
 }
 
-Invoke-Upsert 'Stop'             $StopCmd   $null
-Invoke-Upsert 'Notification'     $StopCmd   $null
-Invoke-Upsert 'UserPromptSubmit' $ResumeCmd $null
-Invoke-Upsert 'PreToolUse'       $ResumeCmd '*'
+# Green tint when Claude is genuinely waiting on the human (end of turn).
+# Per the Claude Code hooks docs, Stop is the once-per-turn event that
+# fires after the agentic loop completes; we deliberately do NOT also
+# hook Notification, which fires multiple times per turn (permission
+# prompts, idle prompts, auth_success, elicitation_*) and produced
+# spurious tints in the middle of tool-use loops.
+Add-Hook 'Stop'             $StopCmd   $null
+# Reset to terminal default whenever Claude is back at work, so the user
+# sees their normal terminal theme during long autonomous loops.
+Add-Hook 'UserPromptSubmit' $ResumeCmd $null
+Add-Hook 'PreToolUse'       $ResumeCmd '*'
 
 $out = $data | ConvertTo-Json -Depth 32
 # Validate by re-parsing -- throws if the output is malformed.

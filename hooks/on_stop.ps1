@@ -1,8 +1,9 @@
-# claude-code-terminal-tint: Stop / Notification hook -- apply "waiting" tint.
+# claude-code-terminal-tint: Stop hook -- apply "waiting" tint.
 #
-# Writes OSC 11 (background) and OSC 10 (foreground) sequences to stderr via
-# [Console]::Error.Write, so the conhost recolors itself without polluting
-# Claude Code's stdout. ST terminator = ESC + backslash.
+# Fires when the main agent finishes its turn and is genuinely waiting on
+# the user. Writes OSC 11 (background) and OSC 10 (foreground) sequences
+# to stderr via [Console]::Error.Write so the conhost recolors itself
+# without polluting Claude Code's stdout. ST terminator = ESC + backslash.
 
 $ErrorActionPreference = 'SilentlyContinue'
 
@@ -10,8 +11,8 @@ $Dir        = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 $ConfigPath = Join-Path $Dir 'config.json'
 
 # Defaults -- kept in sync with config.json.
-$bg = '#7a4a00'
-$fg = '#fff7e0'
+$bg = '#1f5d3a'
+$fg = '#e8f5e9'
 
 if (Test-Path -LiteralPath $ConfigPath) {
     try {

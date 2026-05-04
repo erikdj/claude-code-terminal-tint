@@ -1,10 +1,12 @@
 #!/bin/sh
-# claude-code-terminal-tint: Stop / Notification hook -- apply "waiting" tint.
+# claude-code-terminal-tint: Stop hook -- apply "waiting" tint.
 #
-# Emits OSC 11 (background) and OSC 10 (foreground) sequences to /dev/tty so
-# the parent terminal recolors itself, without polluting Claude Code's stdout.
-# The terminator used is ST (ESC + backslash), which all major terminals
-# accept; see the OSC section of XTerm Control Sequences.
+# Fires when the main agent finishes its turn and is genuinely waiting on
+# the user. Emits OSC 11 (background) and OSC 10 (foreground) sequences
+# to /dev/tty so the parent terminal recolors itself, without polluting
+# Claude Code's stdout. The terminator used is ST (ESC + backslash),
+# which all major terminals accept; see the OSC section of XTerm Control
+# Sequences.
 
 set -eu
 
@@ -12,8 +14,8 @@ DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG="$DIR/config.json"
 
 # Defaults -- kept in sync with config.json.
-BG="#7a4a00"
-FG="#fff7e0"
+BG="#1f5d3a"
+FG="#e8f5e9"
 
 # Best-effort override from config.json. Uses python3 (preinstalled on Ubuntu,
 # WSL Ubuntu, and macOS) to avoid pulling in jq as a dependency.

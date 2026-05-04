@@ -1,27 +1,19 @@
-# claude-code-terminal-tint: UserPromptSubmit / PreToolUse hook -- apply
-# "working" tint. Mirrors on_stop.ps1 but reads the "working" block.
+# claude-code-terminal-tint: UserPromptSubmit / PreToolUse hook -- reset
+# the terminal to its default colors so the user sees their normal palette
+# whenever Claude is actively working.
+#
+# Emits OSC 110 (reset foreground) and OSC 111 (reset background) via
+# [Console]::Error.Write so the conhost restores whatever colors the user
+# had configured before the "waiting" tint was applied. We deliberately
+# do NOT set a specific "working" color, because that would override the
+# user's own theme. Terminals that don't implement OSC 110/111 will pick
+# up default colors on their next repaint.
 
 $ErrorActionPreference = 'SilentlyContinue'
 
-$Dir        = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
-$ConfigPath = Join-Path $Dir 'config.json'
+$ESC = [char]27
 
-$bg = '#1f5d3a'
-$fg = '#e8f5e9'
-
-if (Test-Path -LiteralPath $ConfigPath) {
-    try {
-        $cfg = Get-Content -Raw -LiteralPath $ConfigPath | ConvertFrom-Json
-        if ($cfg.working.background) { $bg = [string]$cfg.working.background }
-        if ($cfg.working.foreground) { $fg = [string]$cfg.working.foreground }
-    } catch { }
-}
-
-$ESC   = [char]27
-$bgSeq = "$ESC]11;$bg$ESC\"
-$fgSeq = "$ESC]10;$fg$ESC\"
-
-[Console]::Error.Write($bgSeq)
-[Console]::Error.Write($fgSeq)
+[Console]::Error.Write("$ESC]111$ESC\")
+[Console]::Error.Write("$ESC]110$ESC\")
 
 exit 0
