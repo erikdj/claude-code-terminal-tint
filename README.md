@@ -1,15 +1,20 @@
 # claude-code-terminal-tint
 
-Tint your terminal background based on what Claude Code is doing right now.
-When Claude is working, the terminal stays a calm green. When Claude is
-waiting on you, it switches to a warm amber. Hard to miss out of the corner
-of your eye, easy to glance past when you don't need it.
+Tint your terminal background green when Claude Code is genuinely waiting
+on you, and leave it alone the rest of the time. While Claude is working,
+the terminal stays at whatever colors you've configured it to use; the
+moment the agent finishes a turn and is ready for your next prompt, the
+background flips to a calm green that's hard to miss out of the corner of
+your eye. As soon as you start the next turn -- typing a prompt or letting
+Claude pick up the next tool -- the green is removed and the terminal
+goes right back to its default look.
 
-It's a thin Claude Code plugin: four hook scripts plus a small installer
-that merges them into your `~/.claude/settings.json`. Recoloring works by
-emitting [OSC 11](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h4-Operating-System-Commands)
+It's a thin Claude Code plugin: a couple of hook scripts plus a small
+installer that merges them into your `~/.claude/settings.json`. Recoloring
+works by emitting [OSC 11](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h4-Operating-System-Commands)
 (background) and [OSC 10](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h4-Operating-System-Commands)
-(foreground) escape sequences to the parent terminal.
+(foreground) escape sequences to set the green tint, and OSC 110 / OSC 111
+to reset back to the terminal's defaults.
 
 ## Supported terminals
 
@@ -53,21 +58,28 @@ new hooks.
 
 ## How it works
 
-The installer merges four hook entries into `~/.claude/settings.json`:
+The installer merges three hook entries into `~/.claude/settings.json`:
 
-| Event              | Tint applied | When it fires                            |
-| ------------------ | ------------ | ---------------------------------------- |
-| `Stop`             | waiting      | Claude finished responding               |
-| `Notification`     | waiting      | Claude is asking for permission or input |
-| `UserPromptSubmit` | working      | You sent a new prompt                    |
-| `PreToolUse`       | working      | Claude is about to run a tool            |
+| Event              | What we do                            | When it fires                                          |
+| ------------------ | ------------------------------------- | ------------------------------------------------------ |
+| `Stop`             | apply green tint (OSC 11 / OSC 10)    | Claude finished its turn and is waiting on you         |
+| `UserPromptSubmit` | reset to terminal default (OSC 110/111) | You sent a new prompt                                  |
+| `PreToolUse`       | reset to terminal default (OSC 110/111) | Claude is about to run a tool                          |
 
-Each hook fires a tiny script (`hooks/on_stop.*` or `hooks/on_resume.*`)
-that writes OSC 11/10 sequences to the parent terminal. POSIX scripts write
-to `/dev/tty`; PowerShell scripts write to stderr via
-`[Console]::Error.Write`. Either way, Claude Code's own stdout is never
-touched, so the hook can't accidentally interfere with tool output or the
-agent loop.
+`Stop` is the once-per-turn event documented in the
+[Claude Code hooks reference](https://docs.claude.com/en/docs/claude-code/hooks);
+it only fires after the agentic loop has fully completed and the agent is
+genuinely ready for human input. We deliberately do **not** also hook
+`Notification`: that event fires multiple times per turn (for permission
+prompts, idle prompts, `auth_success`, `elicitation_dialog`, etc.), and
+hooking it produced spurious tints in the middle of tool-use loops.
+
+Each hook fires a tiny script (`hooks/on_stop.*` for the green tint,
+`hooks/on_resume.*` for the reset) that writes the OSC sequences to the
+parent terminal. POSIX scripts write to `/dev/tty`; PowerShell scripts
+write to stderr via `[Console]::Error.Write`. Either way, Claude Code's
+own stdout is never touched, so the hook can't accidentally interfere
+with tool output or the agent loop.
 
 The merge is idempotent. Running `install.sh` again (e.g. after editing
 this plugin) replaces only the entries this plugin owns, identified by a
@@ -79,35 +91,36 @@ PowerShell, so the marker has no effect at runtime. Anything else in your
 `settings.json` is left alone, and the merged JSON is round-tripped through
 a parser before being written so a corrupt file is never produced.
 
-## Configure colors
+## Configure the color
+
+There is exactly one configurable color: the tint applied while Claude is
+waiting on you. Everything else uses your terminal's default theme.
 
 Edit `config.json` in the plugin folder:
 
 ```json
 {
-  "working": {
+  "waiting": {
     "background": "#1f5d3a",
     "foreground": "#e8f5e9"
-  },
-  "waiting": {
-    "background": "#7a4a00",
-    "foreground": "#fff7e0"
   }
 }
 ```
 
-Hex format only (`#rrggbb`). The hook scripts read `config.json` every time
-they fire, so no reinstall is needed -- save the file and the next event
-picks it up.
+Hex format only (`#rrggbb`). The hook script reads `config.json` every
+time it fires, so no reinstall is needed -- save the file and the next
+`Stop` event picks it up.
 
-A few alternate palettes if green/amber aren't your thing:
+A few alternate palettes if green isn't your thing:
 
-| Vibe                     | working bg / fg          | waiting bg / fg          |
-| ------------------------ | ------------------------ | ------------------------ |
-| **Default**              | `#1f5d3a` / `#e8f5e9`    | `#7a4a00` / `#fff7e0`    |
-| Cool (slate / coral)     | `#1e3a5f` / `#e3f0ff`    | `#7a1f3a` / `#ffe0eb`    |
-| High-contrast            | `#0d3b1f` / `#ffffff`    | `#8a3500` / `#ffffff`    |
-| Subtle (charcoal / dusk) | `#1a1a1a` / `#dcdcdc`    | `#3a2a1a` / `#f0e0c8`    |
+| Vibe                | waiting bg / fg          |
+| ------------------- | ------------------------ |
+| **Default (green)** | `#1f5d3a` / `#e8f5e9`    |
+| Amber               | `#7a4a00` / `#fff7e0`    |
+| Cool (slate)        | `#1e3a5f` / `#e3f0ff`    |
+| Coral               | `#7a1f3a` / `#ffe0eb`    |
+| High-contrast green | `#0d3b1f` / `#ffffff`    |
+| High-contrast amber | `#8a3500` / `#ffffff`    |
 
 ## Troubleshooting
 
@@ -117,13 +130,14 @@ A few alternate palettes if green/amber aren't your thing:
 grep claude-code-terminal-tint ~/.claude/settings.json
 ```
 
-If you see four matches, you're good -- start a fresh Claude Code session.
+If you see three matches, you're good -- start a fresh Claude Code session.
 `settings.json` is only read at session start.
 
-**The tint flashes briefly, then snaps back.** Some terminals reset OSC 11
-on each new shell process. The sequences are meant to persist for the life
-of the terminal session, so the next `Stop` or `UserPromptSubmit` event
-will reapply.
+**The green tint flashes on, then immediately snaps back to default.** Some
+terminals reset OSC 11 on each new shell process. The sequences are meant
+to persist for the life of the terminal session, so the next `Stop` event
+will reapply the tint and the next `UserPromptSubmit` / `PreToolUse` will
+reset it.
 
 **Inside tmux or screen.** OSC 11 needs a passthrough. For tmux, in
 `~/.tmux.conf`:
@@ -147,10 +161,13 @@ JSON. On Ubuntu: `sudo apt install python3`. On macOS, python3 ships with
 the Xcode command line tools.
 
 **Want a different event to trigger the tint?** Edit
-`~/.claude/settings.json` directly. The four events the installer wires up
-are listed in the table above; the
+`~/.claude/settings.json` directly. The three events the installer wires
+up are listed in the table above; the
 [Claude Code hooks reference](https://docs.claude.com/en/docs/claude-code/hooks)
-documents every available event.
+documents every available event. (Note: hooking `Notification` is
+tempting but produces spurious mid-loop tints, because Notification fires
+for many things that aren't "agent waiting on the human" -- see the
+"How it works" section above.)
 
 ## Uninstall
 
@@ -169,7 +186,7 @@ Remove-Item -Recurse -Force $env:USERPROFILE\.claude-code-terminal-tint
 ```
 
 Both uninstallers reset the terminal background and foreground via OSC
-110 / OSC 111 so you aren't left staring at amber after the plugin is
+110 / OSC 111 so you aren't left staring at green after the plugin is
 gone, and they remove only this plugin's entries from `settings.json` --
 unrelated hooks stay put.
 
