@@ -1,5 +1,7 @@
 # claude-code-terminal-tint
 
+> 🚧 **Future Claude Code session opening this repo: read [`STARTUP.md`](./STARTUP.md) first.** Work was parked mid-debug on 2026-05-04 with a diagnostic probe live on master; that file restores the in-flight context without you having to re-derive it. End-to-end tinting works on bash/Ubuntu but is broken on Windows native (CC-in-pwsh-in-WT) -- do not assume the plugin is fully shipped.
+
 Tint your terminal background green when Claude Code is genuinely waiting
 on you, and leave it alone the rest of the time. While Claude is working,
 the terminal stays at whatever colors you've configured it to use; the
