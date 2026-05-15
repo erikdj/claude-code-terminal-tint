@@ -7,8 +7,26 @@
 # write to CONOUT$ rather than [Console]::Error.Write or stdout: Claude
 # Code captures both stdout and stderr from hook processes, so neither
 # would reach the terminal emulator.
+#
+# Newer Claude Code spawns hook children that are NOT attached to the
+# parent's ConPTY, so we FreeConsole + AttachConsole(-1) to bind to the
+# parent process's console before writing -- same recovery pattern as
+# on_stop.ps1, and the Windows analogue of the /proc-walk fallback in
+# the POSIX hooks.
 
 $ErrorActionPreference = 'SilentlyContinue'
+
+try {
+    Add-Type -ErrorAction SilentlyContinue -Namespace CcttHook -Name Native -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+public static extern bool FreeConsole();
+[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+public static extern bool AttachConsole(uint dwProcessId);
+'@
+    $ATTACH_PARENT = [System.BitConverter]::ToUInt32([System.BitConverter]::GetBytes([int]-1), 0)
+    [CcttHook.Native]::FreeConsole() | Out-Null
+    [CcttHook.Native]::AttachConsole($ATTACH_PARENT) | Out-Null
+} catch { }
 
 $ESC = [char]27
 
