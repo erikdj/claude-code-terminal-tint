@@ -6,6 +6,32 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed (isolation-aware hooks)
+- **Hooks now survive Claude Code spawning them in an isolated session.**
+  Recent Claude Code releases (observed on 2.1.x) launch hook child
+  processes with their own session on POSIX (`setsid`) and detached
+  from the parent's ConPTY on Windows, which broke the original
+  "just write to `/dev/tty`" / "just write to `CONOUT$`" design:
+  - On Linux/WSL the kernel returns `ENXIO` when a process with no
+    controlling terminal opens `/dev/tty`. The existing hook had a
+    `[ -e /dev/tty ]` guard that passed (the device node always
+    exists) but the actual open then failed silently, swallowed by
+    `2>/dev/null`. The hook exited 0 with no OSC bytes emitted.
+  - On Windows `CONOUT$` still opens, but resolves to a fresh
+    invisible console rather than Windows Terminal's ConPTY, so the
+    OSC bytes were written into a void.
+  Both platforms now recover before writing: POSIX walks
+  `/proc/<ppid>/...` up the process tree until an ancestor's stdio
+  resolves to a `/dev/pts/N` device and writes the OSC sequence there;
+  Windows calls `FreeConsole()` + `AttachConsole(-1)` to bind to the
+  parent process's console before opening `CONOUT$`. Both fallbacks
+  fail silently if no recovery target is found, so a misbehaving hook
+  never surfaces as a Claude Code error.
+- New `test/test-tty-recovery.sh` regression: spawns the hook under
+  `script(1)` + `setsid` so `/dev/tty` really is unwritable inside the
+  child, then asserts the OSC bytes still appear in the captured PTY
+  output via the ancestor lookup.
+
 ### Fixed (Windows)
 - **The PowerShell hooks now actually recolor Windows Terminal.** Before
   this fix, `hooks/on_stop.ps1` and `hooks/on_resume.ps1` wrote their OSC

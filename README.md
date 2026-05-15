@@ -78,21 +78,35 @@ hooking it produced spurious tints in the middle of tool-use loops.
 
 Each hook fires a tiny script (`hooks/on_stop.*` for the green tint,
 `hooks/on_resume.*` for the reset) that writes the OSC sequences directly
-to the controlling terminal device. POSIX scripts write to `/dev/tty`;
-PowerShell scripts open `CONOUT$` (the Windows analogue) as a `FileStream`
-and write through that. **Both deliberately bypass stdout/stderr**, because
-[the Claude Code hooks docs](https://code.claude.com/docs/en/hooks) confirm
-that Claude Code captures both streams from hook child processes -- stdout
-is parsed for JSON output and stderr is fed back to Claude as an error
-message on non-zero exit, so any escape sequences written there would
-never reach the terminal emulator. `/dev/tty` and `CONOUT$` are the
-escape hatches that go straight to the inherited conhost / pty regardless
-of how the parent process redirects standard handles.
+to the controlling terminal device. **The hooks deliberately bypass
+stdout and stderr**, because [the Claude Code hooks docs](https://code.claude.com/docs/en/hooks)
+confirm that Claude Code captures both streams from hook child processes --
+stdout is parsed for JSON output and stderr is fed back to Claude as an
+error message on non-zero exit, so any escape sequences written to either
+would never reach the terminal emulator.
+
+The "direct write" path comes in two flavors, and each has a fallback for
+newer Claude Code releases that spawn hook children with their own session
+(POSIX `setsid`) or detached from the parent console (Windows). Without
+the fallback those children have no path back to the user's terminal:
+`/dev/tty` returns `ENXIO` on POSIX, and `CONOUT$` opens a fresh invisible
+console on Windows instead of Windows Terminal's ConPTY.
+
+| Platform | Fast path                | Fallback when the hook child is isolated                                              |
+| -------- | ------------------------ | ------------------------------------------------------------------------------------- |
+| POSIX    | open `/dev/tty` directly | walk `/proc/<ppid>/...` until an ancestor's stdio resolves to `/dev/pts/N`, write there |
+| Windows  | open `CONOUT$` directly  | `FreeConsole()` + `AttachConsole(-1)` (a.k.a. `ATTACH_PARENT_PROCESS`), then `CONOUT$` |
+
+Both fallbacks fail silently (no-op, exit 0) if no recovery target can be
+found, so a misbehaving hook never surfaces as a Claude Code error.
 
 > If you're contributing a port to another shell or platform: do not
 > "simplify" the hooks to write to stdout or stderr. Write directly to
-> the controlling terminal device. The automated tests
-> (`test/test-install.{sh,ps1}`) enforce this.
+> the controlling terminal device, and preserve the isolation-recovery
+> path described above -- without it the plugin appears to install
+> cleanly but silently does nothing on every recent Claude Code release.
+> The automated tests (`test/test-install.{sh,ps1}` plus
+> `test/test-tty-recovery.sh` on POSIX) enforce this.
 
 The merge is idempotent. Running `install.sh` again (e.g. after editing
 this plugin) replaces only the entries this plugin owns, identified by a
@@ -224,9 +238,17 @@ pwsh -NoProfile -File test/test-install.ps1
 ```
 
 The bash test additionally asserts that the POSIX hook scripts produce
-no stderr when invoked without a controlling tty. The PowerShell hooks
-intentionally write OSC bytes to stderr (the conhost interprets them as
-recolor commands), so that assertion does not have a PowerShell analogue.
+no stderr when invoked without a controlling tty.
+
+A second test, `test/test-tty-recovery.sh`, verifies the `/proc`-walk
+fallback specifically: it allocates a PTY with `script(1)`, runs the
+hook inside `setsid` so `/dev/tty` is unavailable (the broken-CC
+scenario), and asserts the OSC bytes still make it to the captured PTY
+via the ancestor lookup. Linux/WSL only; skipped on macOS (no `/proc`).
+
+```sh
+bash test/test-tty-recovery.sh
+```
 
 ## License
 
