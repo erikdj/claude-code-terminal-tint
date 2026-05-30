@@ -6,6 +6,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+- **The tint is now cleared when you exit Claude Code.** A `SessionEnd`
+  hook runs the same reset script (`on_resume.*`, OSC 110 / 111) that
+  `UserPromptSubmit` and `PreToolUse` use, so the green "waiting" tint
+  applied by the session's final `Stop` no longer outlives Claude Code
+  -- previously you'd quit back to a shell that was still tinted green.
+  `SessionEnd` fires once when the session terminates (quit, `/exit`,
+  Ctrl+D, `/clear`, logout). The installer now registers four hook
+  entries instead of three; re-running it on an existing install adds
+  the `SessionEnd` entry automatically.
+
 ### Fixed (isolation-aware hooks)
 - **Hooks now survive Claude Code spawning them in an isolated session.**
   Recent Claude Code releases (observed on 2.1.x) launch hook child

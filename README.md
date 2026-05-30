@@ -157,7 +157,7 @@ A few alternate palettes if green isn't your thing:
 grep claude-code-terminal-tint ~/.claude/settings.json
 ```
 
-If you see three matches, you're good -- start a fresh Claude Code session.
+If you see four matches, you're good -- start a fresh Claude Code session.
 `settings.json` is only read at session start.
 
 **The green tint flashes on, then immediately snaps back to default.** Some
@@ -188,7 +188,7 @@ JSON. On Ubuntu: `sudo apt install python3`. On macOS, python3 ships with
 the Xcode command line tools.
 
 **Want a different event to trigger the tint?** Edit
-`~/.claude/settings.json` directly. The three events the installer wires
+`~/.claude/settings.json` directly. The four events the installer wires
 up are listed in the table above; the
 [Claude Code hooks reference](https://docs.claude.com/en/docs/claude-code/hooks)
 documents every available event. (Note: hooking `Notification` is

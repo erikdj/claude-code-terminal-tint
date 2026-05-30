@@ -110,6 +110,13 @@ add("Stop", stop_cmd)
 # sees their normal terminal theme during long autonomous loops.
 add("UserPromptSubmit", resume_cmd)
 add("PreToolUse", resume_cmd, matcher="*")
+# Reset on the way out, too. Without this the green tint from the final Stop
+# event of the session persists in the terminal after Claude Code exits.
+# SessionEnd fires once when the session terminates (quit, /exit, Ctrl+D,
+# /clear, logout, ...); reusing the resume script clears the tint. We fire on
+# every reason -- on /clear the session restarts and the next Stop re-tints,
+# so an unconditional reset here is harmless.
+add("SessionEnd", resume_cmd)
 
 # Validate by round-tripping through json before writing.
 out = json.dumps(data, indent=2)

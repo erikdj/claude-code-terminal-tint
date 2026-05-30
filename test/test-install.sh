@@ -8,16 +8,17 @@
 #                        hardcoded OSC 11 color set
 #   - config.json defines the green "waiting" palette and no longer
 #     defines a "working" block.
-#   - install.sh registers exactly three hook entries (Stop,
-#     UserPromptSubmit, PreToolUse) -- and explicitly does NOT register
-#     anything on Notification, which previously fired spurious tints
-#     mid-loop.
+#   - install.sh registers exactly four hook entries (Stop,
+#     UserPromptSubmit, PreToolUse, SessionEnd) -- and explicitly does
+#     NOT register anything on Notification, which previously fired
+#     spurious tints mid-loop.
 #   - Path-independent marker: idempotent re-installs and clean uninstall
 #     work even when the plugin lives at a path that does not contain
 #     "claude-code-terminal-tint".
 #   - Migration: a settings.json pre-seeded with the v0.1.0 layout (four
-#     plugin hooks including Notification) is collapsed to the new
-#     three-hook layout on re-install, and the Notification key is gone.
+#     plugin hooks including Notification) is migrated to the new
+#     four-hook layout (Notification dropped, SessionEnd added) on
+#     re-install.
 #   - Pre-existing user hooks survive both install and uninstall.
 #   - settings.json round-trips through a JSON parser at every step.
 #   - Hook scripts and uninstall produce no stderr without a tty.
@@ -210,20 +211,21 @@ EOF
 
 HOME="$FAKE_HOME" sh "$PLUGIN/install.sh" >/dev/null
 assert_json_valid
-assert_eq "$(count_ours)"            "3"   "first install registers exactly 3 plugin hook entries"
+assert_eq "$(count_ours)"            "4"   "first install registers exactly 4 plugin hook entries"
 assert_eq "$(has_event_key Notification)" "no"  "first install does NOT register a Notification hook"
 assert_eq "$(has_event_key Stop)"             "yes" "first install registers Stop"
 assert_eq "$(has_event_key UserPromptSubmit)" "yes" "first install registers UserPromptSubmit"
 assert_eq "$(has_event_key PreToolUse)"       "yes" "first install registers PreToolUse"
+assert_eq "$(has_event_key SessionEnd)"       "yes" "first install registers SessionEnd"
 assert_eq "$(has_user_hook)" "yes" "pre-existing user hook survives first install"
 
 HOME="$FAKE_HOME" sh "$PLUGIN/install.sh" >/dev/null
 assert_json_valid
-assert_eq "$(count_ours)" "3" "second install is idempotent (still 3 entries)"
+assert_eq "$(count_ours)" "4" "second install is idempotent (still 4 entries)"
 
 HOME="$FAKE_HOME" sh "$PLUGIN/install.sh" >/dev/null
 assert_json_valid
-assert_eq "$(count_ours)" "3" "third install is idempotent (still 3 entries)"
+assert_eq "$(count_ours)" "4" "third install is idempotent (still 4 entries)"
 
 # ---------- 3. Migration from v0.1.0 layout ---------------------------------
 
@@ -256,8 +258,9 @@ PYEOF
 
 HOME="$FAKE_HOME" sh "$PLUGIN/install.sh" >/dev/null
 assert_json_valid
-assert_eq "$(count_ours)"                  "3"  "v0.1.0->current upgrade collapses 4 plugin entries to 3"
+assert_eq "$(count_ours)"                  "4"  "v0.1.0->current upgrade yields 4 plugin entries"
 assert_eq "$(has_event_key Notification)"  "no" "v0.1.0 Notification entry is removed on upgrade"
+assert_eq "$(has_event_key SessionEnd)"    "yes" "upgrade adds the SessionEnd reset hook"
 assert_eq "$(has_user_hook)"               "yes" "user hook on Stop survives v0.1.0->current upgrade"
 
 # ---------- 4. Uninstall + idempotent uninstall ------------------------------

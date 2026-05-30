@@ -110,6 +110,11 @@ Add-Hook 'Stop'             $StopCmd   $null
 # sees their normal terminal theme during long autonomous loops.
 Add-Hook 'UserPromptSubmit' $ResumeCmd $null
 Add-Hook 'PreToolUse'       $ResumeCmd '*'
+# Reset on the way out, too. Without this the green tint from the final Stop
+# event of the session persists in the terminal after Claude Code exits.
+# SessionEnd fires once when the session terminates (quit, /exit, Ctrl+D,
+# /clear, logout, ...); reusing the resume script clears the tint.
+Add-Hook 'SessionEnd'       $ResumeCmd $null
 
 $out = $data | ConvertTo-Json -Depth 32
 # Validate by re-parsing -- throws if the output is malformed.
