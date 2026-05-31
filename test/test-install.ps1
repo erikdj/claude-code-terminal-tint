@@ -16,15 +16,16 @@ Coverage (mirrors test-install.sh):
                        hardcoded OSC 11 color set
   - config.json defines the green "waiting" palette and no longer
     defines a "working" block.
-  - install.ps1 registers exactly four hook entries (Stop,
+  - install.ps1 registers exactly five hook entries (Stop, SessionStart,
     UserPromptSubmit, PreToolUse, SessionEnd) and explicitly does NOT
     register anything on Notification.
   - Path-independent marker: idempotent re-installs and clean uninstall
     work even when the plugin lives at a path that does not contain
     "claude-code-terminal-tint".
   - Migration: a settings.json pre-seeded with the v0.1.0 layout (four
-    plugin hooks including Notification) is migrated to the new four-hook
-    layout (Notification dropped, SessionEnd added) on re-install.
+    plugin hooks including Notification) is migrated to the new five-hook
+    layout (Notification dropped, SessionEnd + SessionStart added) on
+    re-install.
   - Pre-existing user hooks survive both install and uninstall.
   - settings.json round-trips through a JSON parser at every step.
 
@@ -225,9 +226,10 @@ Set-Content -LiteralPath $Settings -Value $preseed -Encoding utf8
 try {
     Invoke-WithFakeHome $InstallScript
     Assert-JsonValid
-    Assert-Eq (Get-OursCount)                4     'first install registers exactly 4 plugin hook entries'
+    Assert-Eq (Get-OursCount)                5     'first install registers exactly 5 plugin hook entries'
     Assert-Eq (Test-EventKey 'Notification') 'no'  'first install does NOT register a Notification hook'
     Assert-Eq (Test-EventKey 'Stop')             'yes' 'first install registers Stop'
+    Assert-Eq (Test-EventKey 'SessionStart')     'yes' 'first install registers SessionStart'
     Assert-Eq (Test-EventKey 'UserPromptSubmit') 'yes' 'first install registers UserPromptSubmit'
     Assert-Eq (Test-EventKey 'PreToolUse')       'yes' 'first install registers PreToolUse'
     Assert-Eq (Test-EventKey 'SessionEnd')       'yes' 'first install registers SessionEnd'
@@ -235,11 +237,11 @@ try {
 
     Invoke-WithFakeHome $InstallScript
     Assert-JsonValid
-    Assert-Eq (Get-OursCount) 4 'second install is idempotent (still 4 entries)'
+    Assert-Eq (Get-OursCount) 5 'second install is idempotent (still 5 entries)'
 
     Invoke-WithFakeHome $InstallScript
     Assert-JsonValid
-    Assert-Eq (Get-OursCount) 4 'third install is idempotent (still 4 entries)'
+    Assert-Eq (Get-OursCount) 5 'third install is idempotent (still 5 entries)'
 
     # ---------- 3. Migration from v0.1.0 layout -----------------------------
 
@@ -266,9 +268,10 @@ try {
 
     Invoke-WithFakeHome $InstallScript
     Assert-JsonValid
-    Assert-Eq (Get-OursCount)                4   'v0.1.0->current upgrade yields 4 plugin entries'
+    Assert-Eq (Get-OursCount)                5   'v0.1.0->current upgrade yields 5 plugin entries'
     Assert-Eq (Test-EventKey 'Notification') 'no' 'v0.1.0 Notification entry is removed on upgrade'
     Assert-Eq (Test-EventKey 'SessionEnd')   'yes' 'upgrade adds the SessionEnd reset hook'
+    Assert-Eq (Test-EventKey 'SessionStart') 'yes' 'upgrade adds the SessionStart tint hook'
     Assert-Eq (Get-HasUserHook)              'yes' 'user hook on Stop survives v0.1.0->current upgrade'
 
     # ---------- 4. Uninstall + idempotent uninstall -------------------------

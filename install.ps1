@@ -106,6 +106,12 @@ function Add-Hook {
 # prompts, idle prompts, auth_success, elicitation_*) and produced
 # spurious tints in the middle of tool-use loops.
 Add-Hook 'Stop'             $StopCmd   $null
+# Tint green at session start too: a fresh (or resumed/cleared) session is
+# immediately waiting on the human to type the first prompt, so the same
+# "waiting" green applies. Without this the terminal sits at its default
+# color until the first turn ends. UserPromptSubmit clears it the moment
+# you send that first prompt.
+Add-Hook 'SessionStart'     $StopCmd   $null
 # Reset to terminal default whenever Claude is back at work, so the user
 # sees their normal terminal theme during long autonomous loops.
 Add-Hook 'UserPromptSubmit' $ResumeCmd $null

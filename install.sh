@@ -106,6 +106,12 @@ def add(event, cmd, matcher=None):
 # prompts, idle prompts, auth_success, elicitation_*) and produced
 # spurious tints in the middle of tool-use loops.
 add("Stop", stop_cmd)
+# Tint green at session start too: a fresh (or resumed/cleared) session is
+# immediately waiting on the human to type the first prompt, so the same
+# "waiting" green applies. Without this the terminal sits at its default
+# color until the first turn ends. UserPromptSubmit clears it the moment
+# you send that first prompt.
+add("SessionStart", stop_cmd)
 # Reset to terminal default whenever Claude is back at work, so the user
 # sees their normal terminal theme during long autonomous loops.
 add("UserPromptSubmit", resume_cmd)

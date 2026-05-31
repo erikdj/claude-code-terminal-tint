@@ -60,11 +60,12 @@ new hooks.
 
 ## How it works
 
-The installer merges four hook entries into `~/.claude/settings.json`:
+The installer merges five hook entries into `~/.claude/settings.json`:
 
 | Event              | What we do                            | When it fires                                          |
 | ------------------ | ------------------------------------- | ------------------------------------------------------ |
 | `Stop`             | apply green tint (OSC 11 / OSC 10)    | Claude finished its turn and is waiting on you         |
+| `SessionStart`     | apply green tint (OSC 11 / OSC 10)    | A session starts/resumes/clears -- you're waiting to type the first prompt, so it's green right away instead of sitting at default |
 | `UserPromptSubmit` | reset to terminal default (OSC 110/111) | You sent a new prompt                                  |
 | `PreToolUse`       | reset to terminal default (OSC 110/111) | Claude is about to run a tool                          |
 | `SessionEnd`       | reset to terminal default (OSC 110/111) | Session terminates (quit, `/exit`, Ctrl+D, `/clear`, logout) -- without this the final `Stop` tint outlives Claude Code |
@@ -158,7 +159,7 @@ A few alternate palettes if green isn't your thing:
 grep claude-code-terminal-tint ~/.claude/settings.json
 ```
 
-If you see four matches, you're good -- start a fresh Claude Code session.
+If you see five matches, you're good -- start a fresh Claude Code session.
 `settings.json` is only read at session start.
 
 **The green tint flashes on, then immediately snaps back to default.** Some
@@ -189,7 +190,7 @@ JSON. On Ubuntu: `sudo apt install python3`. On macOS, python3 ships with
 the Xcode command line tools.
 
 **Want a different event to trigger the tint?** Edit
-`~/.claude/settings.json` directly. The four events the installer wires
+`~/.claude/settings.json` directly. The five events the installer wires
 up are listed in the table above; the
 [Claude Code hooks reference](https://docs.claude.com/en/docs/claude-code/hooks)
 documents every available event. (Note: hooking `Notification` is

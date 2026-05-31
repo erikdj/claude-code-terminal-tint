@@ -7,15 +7,21 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [Unreleased]
 
 ### Added
+- **The tint now turns green the moment a session starts.** A
+  `SessionStart` hook applies the same green "waiting" tint as `Stop`,
+  because a fresh (or resumed/cleared) session is immediately waiting on
+  you to type the first prompt. Previously the terminal sat at its
+  default color until the first turn ended; now it's green right away,
+  and `UserPromptSubmit` clears it as soon as you send that first prompt.
 - **The tint is now cleared when you exit Claude Code.** A `SessionEnd`
   hook runs the same reset script (`on_resume.*`, OSC 110 / 111) that
   `UserPromptSubmit` and `PreToolUse` use, so the green "waiting" tint
   applied by the session's final `Stop` no longer outlives Claude Code
   -- previously you'd quit back to a shell that was still tinted green.
   `SessionEnd` fires once when the session terminates (quit, `/exit`,
-  Ctrl+D, `/clear`, logout). The installer now registers four hook
-  entries instead of three; re-running it on an existing install adds
-  the `SessionEnd` entry automatically.
+  Ctrl+D, `/clear`, logout). Together these two hooks bring the installer
+  to five entries (up from three); re-running it on an existing install
+  adds the new entries automatically.
 
 ### Fixed (isolation-aware hooks)
 - **Hooks now survive Claude Code spawning them in an isolated session.**
