@@ -60,13 +60,14 @@ new hooks.
 
 ## How it works
 
-The installer merges three hook entries into `~/.claude/settings.json`:
+The installer merges four hook entries into `~/.claude/settings.json`:
 
 | Event              | What we do                            | When it fires                                          |
 | ------------------ | ------------------------------------- | ------------------------------------------------------ |
 | `Stop`             | apply green tint (OSC 11 / OSC 10)    | Claude finished its turn and is waiting on you         |
 | `UserPromptSubmit` | reset to terminal default (OSC 110/111) | You sent a new prompt                                  |
 | `PreToolUse`       | reset to terminal default (OSC 110/111) | Claude is about to run a tool                          |
+| `SessionEnd`       | reset to terminal default (OSC 110/111) | Session terminates (quit, `/exit`, Ctrl+D, `/clear`, logout) -- without this the final `Stop` tint outlives Claude Code |
 
 `Stop` is the once-per-turn event documented in the
 [Claude Code hooks reference](https://docs.claude.com/en/docs/claude-code/hooks);
